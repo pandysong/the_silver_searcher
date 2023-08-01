@@ -15,6 +15,7 @@
 #include "options.h"
 #include "print.h"
 #include "util.h"
+#include "file_db.h"
 
 const char *color_line_number = "\033[1;33m"; /* bold yellow */
 const char *color_match = "\033[30;43m";      /* black with yellow background */
@@ -94,6 +95,7 @@ Search Options:\n\
      --ignore PATTERN     Ignore files/directories matching PATTERN\n\
                           (literal file/directory names also allowed)\n\
      --ignore-dir NAME    Alias for --ignore for compatibility with ack.\n\
+  -y --path-to-file-db    Search from a list of file saved in a file\n\
   -m --max-count NUM      Skip the rest of a file after NUM matches (Default: 10,000)\n\
      --one-device         Don't follow links to other devices.\n\
   -p --path-to-ignore STRING\n\
@@ -206,11 +208,25 @@ void cleanup_options(void) {
     }
 }
 
+
+static void adjust_base_path(char *base_path)
+{
+    int base_path_len;
+    if (base_path) {
+        base_path_len = strlen(base_path);
+        /* add trailing slash */
+        if (base_path_len > 1 && base_path[base_path_len - 1] != '/') {
+            base_path = ag_realloc(base_path, base_path_len + 2);
+            base_path[base_path_len] = '/';
+            base_path[base_path_len + 1] = '\0';
+        }
+    }
+}
+
 void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
     int ch;
     size_t i;
     int path_len = 0;
-    int base_path_len = 0;
     int useless = 0;
     int group = 1;
     int help = 0;
@@ -314,6 +330,7 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
         { "passthrough", no_argument, &opts.passthrough, 1 },
         { "passthru", no_argument, &opts.passthrough, 1 },
         { "path-to-ignore", required_argument, NULL, 'p' },
+        { "path-to-file-db", required_argument, NULL, 'y' },
         { "print0", no_argument, NULL, '0' },
         { "print-all-files", no_argument, NULL, 0 },
         { "print-long-lines", no_argument, &opts.print_long_lines, 1 },
@@ -379,7 +396,7 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
     }
 
     char *file_search_regex = NULL;
-    while ((ch = getopt_long(argc, argv, "A:aB:C:cDG:g:FfHhiLlm:nop:QRrSsvVtuUwW:z0", longopts, &opt_index)) != -1) {
+    while ((ch = getopt_long(argc, argv, "A:aB:C:cDG:g:FfHhiLlm:nop:y:QRrSsvVtuUwW:z0", longopts, &opt_index)) != -1) {
         switch (ch) {
             case 'A':
                 if (optarg) {
@@ -470,6 +487,10 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
             case 'p':
                 opts.path_to_ignore = TRUE;
                 load_ignore_patterns(root_ignores, optarg);
+                break;
+            case 'y':
+                opts.path_to_list_file = TRUE;
+                load_list_of_files(paths, base_paths, optarg, &opts.paths_len);
                 break;
             case 'o':
                 opts.only_matching = 1;
@@ -805,6 +826,8 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
 #ifdef PATH_MAX
     char *tmp = NULL;
 #endif
+    if (NULL == *paths)
+    {
     opts.paths_len = argc;
     if (argc > 0) {
         *paths = ag_calloc(sizeof(char *), argc + 1);
@@ -823,15 +846,7 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
 #else
             base_path = realpath(path, NULL);
 #endif
-            if (base_path) {
-                base_path_len = strlen(base_path);
-                /* add trailing slash */
-                if (base_path_len > 1 && base_path[base_path_len - 1] != '/') {
-                    base_path = ag_realloc(base_path, base_path_len + 2);
-                    base_path[base_path_len] = '/';
-                    base_path[base_path_len + 1] = '\0';
-                }
-            }
+            adjust_base_path(base_path);
             (*base_paths)[i] = base_path;
         }
         /* Make sure we search these paths instead of stdin. */
@@ -851,6 +866,7 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
     }
     (*paths)[i] = NULL;
     (*base_paths)[i] = NULL;
+    }
 
 #ifdef _WIN32
     windows_use_ansi(opts.color_win_ansi);

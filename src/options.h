@@ -57,6 +57,7 @@ typedef struct {
     int only_matching;
     char path_sep;
     int path_to_ignore;
+    int path_to_list_file;
     int print_break;
     int print_count;
     int print_filename_only;
